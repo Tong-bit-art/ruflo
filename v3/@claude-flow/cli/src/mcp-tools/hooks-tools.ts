@@ -4829,6 +4829,10 @@ const activeWorkers: Map<string, {
   phase: string;
   startedAt: Date;
   completedAt?: Date;
+  /** True when this record was created by the in-process detect path, not a real executor. */
+  synthetic?: boolean;
+  /** Why the worker record is synthetic, propagated to worker-status/list. */
+  note?: string;
 }> = new Map();
 
 let workerIdCounter = 0;
@@ -5163,6 +5167,12 @@ export const hooksWorkerDetect: MCPTool = {
             progress: 0,
             phase: 'initializing',
             startedAt: new Date(),
+            // hooks_worker-detect has no executor. Unlike its sibling
+            // hooks_worker-dispatch, it used to silently fabricate a
+            // completed worker after 1.5s. Mark the record and response so
+            // callers cannot treat it as real analysis (#4549 automation scan).
+            synthetic: true,
+            note: 'No executor ran: hooks_worker-detect only records a synthetic worker. Use hooks_worker-dispatch with the daemon for real work.',
           });
           dispatched.push(workerId);
 
@@ -5171,13 +5181,15 @@ export const hooksWorkerDetect: MCPTool = {
             const w = activeWorkers.get(workerId);
             if (w) {
               w.progress = 100;
-              w.phase = 'completed';
+              w.phase = 'synthetic-completed';
               w.status = 'completed';
               w.completedAt = new Date();
             }
           }, 1500);
         }
         result.autoDispatched = true;
+        result.autoDispatchStatus = 'synthetic-completed';
+        result.note = 'No executor ran: these worker records are synthetic placeholders. Use hooks_worker-dispatch with the daemon for real work.';
         result.workerIds = dispatched;
       }
     }
